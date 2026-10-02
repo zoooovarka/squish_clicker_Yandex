@@ -41,7 +41,7 @@
   function defaultState() {
     return {
       coins: 0, totalEarned: 0, clicks: 0,
-      upgrades: {}, unlocked: ['butter'], current: 'butter',
+      upgrades: {}, unlocked: [window.STARTER_SQUISH], current: window.STARTER_SQUISH,
       muted: false, savedAt: Date.now(),
     };
   }
@@ -95,7 +95,9 @@
   const level = (id) => state.upgrades[id] || 0;
   const upgradeCost = (u) => Math.ceil(u.base * Math.pow(u.growth, level(u.id)));
   const isMaxed = (u) => !!u.max && level(u.id) >= u.max;
-  const squishById = (id) => SQUISHES.find((q) => q.id === id) || SQUISHES[0];
+  const squishById = (id) => SQUISHES.find((q) => q.id === id) || squishById(window.STARTER_SQUISH);
+  const squishName = (q) => t('nameFmt', { series: t('series.' + q.series), flavor: t('flavor.' + q.flavor) });
+  const rarityTag = (q) => `<span class="rarity r-${q.rarity}">${t('rarity.' + q.rarity)}</span>`;
   const boostActive = () => boostUntil > Date.now();
 
   function incomeMult() {
@@ -352,9 +354,9 @@
     confetti();
     showModal({
       title: t('unlockTitle'),
-      body: `<div class="modal-squish">${window.squishSVG(q)}</div>
-             <div class="modal-name">${t('squish.' + q.id)}</div>
-             <div class="modal-sub">${t('bonus', { p: Math.round(q.bonus * 100) })}</div>`,
+      body: `<div class="modal-squish r-${q.rarity}">${window.squishImg(q)}</div>
+             <div class="modal-name">${squishName(q)}</div>
+             <div class="modal-sub">${rarityTag(q)} ${t('bonus', { p: Math.round(q.bonus * 100) })}</div>`,
       button: t('hooray'),
       onClose: () => maybeFullscreenAd(false),
     });
@@ -417,8 +419,8 @@
 
   function renderSquish(animate) {
     const q = squishById(state.current);
-    els.squish.innerHTML = window.squishSVG(q);
-    els.squishName.textContent = t('squish.' + q.id);
+    els.squish.innerHTML = window.squishImg(q);
+    els.squishName.textContent = squishName(q);
     if (animate) {
       if (squishAnim) squishAnim.cancel();
       squishAnim = els.squish.animate([
@@ -469,20 +471,35 @@
     }
   }
 
+  const seriesRefs = {};
+
   function buildCollection() {
     els.collection.innerHTML = '';
-    for (const q of SQUISHES) {
-      const root = document.createElement('button');
-      root.type = 'button';
-      root.className = 'card';
-      root.innerHTML = `
-        <span class="card-thumb">${window.squishSVG(q)}</span>
-        <span class="card-name">${t('squish.' + q.id)}</span>
-        <span class="card-bonus">${q.bonus ? t('bonus', { p: Math.round(q.bonus * 100) }) : t('firstSquish')}</span>
-        <span class="card-action"></span>`;
-      root.addEventListener('click', () => onSquishCard(q));
-      els.collection.appendChild(root);
-      cardRefs[q.id] = { root, action: root.querySelector('.card-action') };
+    for (const series of window.SERIES) {
+      const head = document.createElement('div');
+      head.className = 'series-head';
+      head.innerHTML = `<span>${t('seriesMany.' + series.id)}</span><b></b>`;
+      els.collection.appendChild(head);
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      els.collection.appendChild(grid);
+      seriesRefs[series.id] = head.querySelector('b');
+
+      const items = SQUISHES.filter((q) => q.series === series.id).sort((a, b) => a.order - b.order);
+      for (const q of items) {
+        const root = document.createElement('button');
+        root.type = 'button';
+        root.className = 'card r-' + q.rarity;
+        root.innerHTML = `
+          <span class="card-thumb">${window.squishImg(q, true)}</span>
+          <span class="card-name">${t('flavor.' + q.flavor)}</span>
+          ${rarityTag(q)}
+          <span class="card-bonus">${t('bonus', { p: Math.round(q.bonus * 100) })}</span>
+          <span class="card-action"></span>`;
+        root.addEventListener('click', () => onSquishCard(q));
+        grid.appendChild(root);
+        cardRefs[q.id] = { root, action: root.querySelector('.card-action') };
+      }
     }
     renderCollection();
   }
@@ -497,6 +514,11 @@
       r.action.innerHTML = owned
         ? (current ? t('selected') : t('select'))
         : `<span class="price"><i class="coin"></i><b>${fmt(q.price)}</b></span>`;
+    }
+    for (const series of window.SERIES) {
+      const all = SQUISHES.filter((q) => q.series === series.id);
+      const have = all.filter((q) => state.unlocked.includes(q.id)).length;
+      seriesRefs[series.id].textContent = t('collected', { n: have, m: all.length });
     }
     renderUpgrades(); // описания улучшений зависят от множителя
   }

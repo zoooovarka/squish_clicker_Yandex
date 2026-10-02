@@ -157,6 +157,10 @@ button {
 }
 
 .squish-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: clamp(18px, 4.5vw, 26px);
   font-weight: 900;
   color: var(--purple-d);
@@ -177,7 +181,7 @@ button {
 
 .squish-holder {
   position: relative;
-  height: min(100%, 400px);
+  height: min(100%, 360px);
   max-width: 100%;
   aspect-ratio: 1;
   cursor: pointer;
@@ -191,13 +195,21 @@ button {
   transform-origin: 50% 85%;
 }
 
-.squish svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
+.squish img {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 10%;
+  width: 92%;
+  height: 82%;
+  object-fit: contain;
+  object-position: 50% 100%;
   filter: drop-shadow(0 6px 8px rgba(150, 80, 120, 0.18));
   pointer-events: none;
+  -webkit-user-drag: none;
 }
+
+.squish.pressed img { filter: drop-shadow(0 3px 4px rgba(150, 80, 120, 0.22)) brightness(1.04) saturate(1.08); }
 
 .squish-shadow {
   position: absolute;
@@ -209,10 +221,6 @@ button {
   background: radial-gradient(closest-side, rgba(120, 60, 120, 0.25), transparent);
 }
 
-.squish .face-squeeze { display: none; }
-.squish.pressed .face-squeeze { display: inline; }
-.squish.pressed .face-normal { display: none; }
-.card-thumb .face-squeeze, .modal-squish .face-squeeze { display: none; }
 
 @keyframes breathe {
   0%, 100% { transform: scale(1, 1); }
@@ -444,6 +452,19 @@ button {
 .upg.maxed .price .coin { display: none; }
 
 /* Коллекция */
+.series-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 4px 6px;
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--purple-d);
+}
+
+.series-head:first-child { padding-top: 2px; }
+.series-head b { font-size: 13px; color: var(--ink-soft); }
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -466,12 +487,32 @@ button {
 .card:active { transform: scale(0.97); }
 .card.current { border-color: var(--pink); box-shadow: 0 0 0 3px rgba(255, 111, 165, 0.2); }
 
-.card-thumb { width: 74px; height: 74px; }
-.card-thumb svg { width: 100%; height: 100%; }
-.card.locked .card-thumb { filter: brightness(0.25) saturate(0) opacity(0.45); }
+.card-thumb { width: 78px; height: 78px; display: grid; place-items: center; }
+.card-thumb img { max-width: 100%; max-height: 100%; -webkit-user-drag: none; }
+.card.locked .card-thumb img { filter: brightness(0) opacity(0.22); }
+
+.rarity {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0.2px;
+}
+
+.rarity.r-common { background: #9fb0c2; }
+.rarity.r-rare { background: #3fa7ff; }
+.rarity.r-epic { background: #a35cff; }
+.rarity.r-legendary { background: linear-gradient(90deg, #ffb300, #ff7a00); }
+
+.card.r-rare { background: linear-gradient(180deg, #f1f8ff, #fff 60%); }
+.card.r-epic { background: linear-gradient(180deg, #f6eeff, #fff 60%); }
+.card.r-legendary { background: linear-gradient(180deg, #fff4dc, #fff 60%); }
+.card.r-legendary:not(.locked) .card-thumb img { filter: drop-shadow(0 0 6px rgba(255, 180, 0, 0.6)); }
 
 .card-name { font-size: 14px; font-weight: 900; text-align: center; line-height: 1.15; }
-.card-bonus { font-size: 11px; font-weight: 800; color: var(--mint); text-align: center; }
+.card-bonus { font-size: 10.5px; font-weight: 800; color: var(--mint); text-align: center; white-space: nowrap; }
 
 .card-action {
   margin-top: 4px;
@@ -516,7 +557,10 @@ button {
 }
 
 .modal-squish { width: 160px; height: 160px; margin: 0 auto; animation: breathe 2.4s ease-in-out infinite; }
-.modal-squish svg { width: 100%; height: 100%; overflow: visible; }
+.modal-squish img { width: 100%; height: 100%; object-fit: contain; }
+.modal-squish.r-epic img { filter: drop-shadow(0 0 10px rgba(163, 92, 255, 0.55)); }
+.modal-squish.r-legendary img { filter: drop-shadow(0 0 14px rgba(255, 180, 0, 0.8)); }
+.modal-sub .rarity { font-size: 12px; vertical-align: 1px; margin-right: 4px; }
 .modal-name { font-size: 22px; font-weight: 900; }
 .modal-sub { font-size: 15px; font-weight: 700; color: var(--ink-soft); margin: 4px 0; }
 .modal-amount {
