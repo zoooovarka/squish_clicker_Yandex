@@ -159,9 +159,10 @@
     };
   }
 
-  function maybeFullscreenAd(force) {
+  // Только в логической паузе (после окна «Новый сквиш»). При запуске рекламу показывает сама платформа.
+  function maybeFullscreenAd() {
     if (!window.YSDK.available) return;
-    if (!force && Date.now() - lastFullscreenAt < FULLSCREEN_GAP_MS) return;
+    if (Date.now() - lastFullscreenAt < FULLSCREEN_GAP_MS) return;
     lastFullscreenAt = Date.now();
     window.YSDK.showFullscreen(adHooks());
   }
@@ -205,8 +206,7 @@
     const v = tapValue() * (crit ? CRIT_MULT : 1);
     addCoins(v);
     state.clicks++;
-    const r = els.stage.getBoundingClientRect();
-    const x = clientX - r.left, y = clientY - r.top;
+    const { x, y } = stagePoint(clientX, clientY);
     spawnFloat(x, y, (crit ? t('crit') + ' ' : '') + '+' + fmt(v), crit ? 'crit' : '');
     spawnParticles(x, y, q.color, crit ? 14 : 6);
     window.Sound.play('squish', { squishId: q.id, series: q.series, pitch: q.pitch });
@@ -231,6 +231,13 @@
 
   function trimLayer(layer, max) {
     while (layer.childElementCount > max) layer.firstElementChild.remove();
+  }
+
+  // Координаты нажатия внутри сцены (учитывает масштаб страницы, если его меняют снаружи)
+  function stagePoint(clientX, clientY) {
+    const r = els.stage.getBoundingClientRect();
+    const k = r.width ? els.stage.offsetWidth / r.width : 1;
+    return { x: (clientX - r.left) * k, y: (clientY - r.top) * k };
   }
 
   function spawnFloat(x, y, text, cls) {
@@ -287,7 +294,6 @@
 
   function spawnStar() {
     if (document.hidden || pauseReasons.size) { scheduleStar(); return; }
-    const r = els.stage.getBoundingClientRect();
     const star = document.createElement('button');
     star.className = 'star-bonus';
     star.type = 'button';
@@ -305,8 +311,9 @@
       const reward = Math.max(50, perSecond() * 30, tapValue() * 20);
       addCoins(reward);
       window.Sound.play('bonus');
-      spawnFloat(e.clientX - r.left, e.clientY - r.top, '⭐ +' + fmt(reward), 'crit');
-      spawnParticles(e.clientX - r.left, e.clientY - r.top, '#ffd447', 16);
+      const p = stagePoint(e.clientX, e.clientY);
+      spawnFloat(p.x, p.y, '⭐ +' + fmt(reward), 'crit');
+      spawnParticles(p.x, p.y, '#ffd447', 16);
       star.remove();
       updateHud();
     });
@@ -359,7 +366,7 @@
              <div class="modal-name">${squishName(q)}</div>
              <div class="modal-sub">${rarityTag(q)} ${t('bonus', { p: Math.round(q.bonus * 100) })}</div>`,
       button: t('hooray'),
-      onClose: () => maybeFullscreenAd(false),
+      onClose: maybeFullscreenAd,
     });
   }
 
@@ -491,6 +498,7 @@
         const root = document.createElement('button');
         root.type = 'button';
         root.className = 'card r-' + q.rarity;
+        root.dataset.id = q.id;
         root.innerHTML = `
           <span class="card-thumb">${window.squishImg(q, true)}</span>
           <span class="card-name">${t('flavor.' + q.flavor)}</span>
@@ -652,7 +660,8 @@
     window.Sound.preload();
 
     await window.YSDK.init();
-    window.I18N.setLang(window.YSDK.lang() || navigator.language || 'ru');
+    const urlLang = new URLSearchParams(location.search).get('lang');
+    window.I18N.setLang(window.YSDK.lang() || urlLang || navigator.language || 'ru');
 
     const cloud = await window.YSDK.loadData();
     state = sanitize(pickBest(loadLocal(), cloud));
@@ -685,13 +694,16 @@
     }
     window.YSDK.ready();
     setPaused('loading', false);
-    maybeFullscreenAd(true); // реклама при запуске
+    lastFullscreenAt = Date.now(); // при запуске реклама уже была от платформы
 
     lastTick = performance.now();
     setInterval(tick, 100);
     setInterval(saveLocal, LOCAL_SAVE_MS);
     setInterval(saveCloud, CLOUD_SAVE_MS);
     scheduleStar();
+
+    // для промо-скриншотов и видео: вызвать звёздочку сразу
+    window.__game = { spawnStar };
   }
 
   boot();
