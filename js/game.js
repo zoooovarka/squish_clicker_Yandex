@@ -209,7 +209,8 @@
     const x = clientX - r.left, y = clientY - r.top;
     spawnFloat(x, y, (crit ? t('crit') + ' ' : '') + '+' + fmt(v), crit ? 'crit' : '');
     spawnParticles(x, y, q.color, crit ? 14 : 6);
-    window.Sound.play(crit ? 'crit' : 'squish', { squishId: q.id, pitch: q.pitch });
+    window.Sound.play('squish', { squishId: q.id, series: q.series, pitch: q.pitch });
+    if (crit) window.Sound.play('crit');
     updateHud();
   }
 

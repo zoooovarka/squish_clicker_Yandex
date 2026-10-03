@@ -16,7 +16,7 @@
   // Порядок вкусов внутри серии = порядок в коллекции.
   const SERIES = [
     {
-      id: 'dumpling', dir: 'dumplings', file: 'dumpling', pitch: 0.95,
+      id: 'dumpling', dir: 'dumplings', file: 'dumpling', pitch: 1,
       items: {
         common: ['cream', 'yellow', 'pink', 'light_pink', 'light_blue', 'blue', 'mint', 'green', 'orange', 'purple', 'red', 'chocolate', 'black'],
         rare: ['cookies', 'matcha', 'marble', 'strawberry', 'hearts'],
@@ -25,7 +25,7 @@
       },
     },
     {
-      id: 'shake', dir: 'shakes', file: 'shake', pitch: 1.15,
+      id: 'shake', dir: 'shakes', file: 'shake', pitch: 1,
       items: {
         common: ['cream', 'yellow', 'pink', 'light_blue', 'blue', 'mint', 'green', 'orange', 'purple', 'red', 'brown', 'black'],
         rare: ['chocolate', 'cookies', 'matcha', 'mango', 'cherry', 'blueberry', 'strawberry', 'strawberry_cream', 'ice'],
@@ -34,7 +34,7 @@
       },
     },
     {
-      id: 'capybara', dir: 'capybaras', file: 'capybara', pitch: 0.82,
+      id: 'capybara', dir: 'capybaras', file: 'capybara', pitch: 1,
       items: {
         common: ['brown', 'cream', 'yellow', 'pink', 'light_blue', 'blue', 'mint', 'green', 'orange', 'purple', 'red', 'chocolate', 'black'],
         rare: ['cow', 'kiwi', 'strawberry'],

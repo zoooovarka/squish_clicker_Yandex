@@ -5,15 +5,18 @@
 свободно использовать в игре. Запуск из корня проекта:
 
     pip install numpy scipy
-    python3 tools/make_sounds.py
+    python3 tools/make_sounds.py                  # все звуки
+    python3 tools/make_sounds.py capybara1 crit    # только выбранные
 
 Нужен ffmpeg с libmp3lame. Файлы появятся в папке sounds/.
 Параметры звуков можно крутить прямо в этом файле и пересобирать.
 """
 import os
 import subprocess
+import sys
 import tempfile
 import wave
+import zlib
 
 import numpy as np
 from scipy import signal
@@ -43,7 +46,7 @@ def chirp(f_start, f_end, dur, tau):
 
 
 def svf_bandpass(x, fc, q):
-    """Полосовой фильтр с меняющейся частотой среза (TPT state-variable filter)."""
+    """Полосовой фильтр с меняющейся частотой (TPT state-variable filter)."""
     fc = np.broadcast_to(np.asarray(fc, dtype=float), x.shape)
     g = np.tan(np.pi * np.clip(fc, 20, SR * 0.45) / SR)
     k = 1.0 / q
@@ -156,50 +159,132 @@ def reverb(x, mix=0.25, seed_shift=0):
 
 # ---------- Звуки игры ----------
 
-def squish(body_from=520, body_to=170, body_decay=0.075, squelch_from=2800, squelch_to=480,
-           squelch_q=4.0, squelch_decay=0.065, squelch_gain=0.6, bubbles=4, bubble_gain=0.22,
-           dur=0.32):
-    """«Чвяк»: мягкий «буп» + влажный шорох + несколько лопнувших пузырьков."""
+# ---------- «Чвяки» для серий сквишей ----------
+# Настоящий сквиш звучит не «бупом», а фактурой: много крошечных липких щелчков
+# и пузырьков поверх влажного шороха. Поэтому звук собирается из «зёрен».
+# У каждого звука свой генератор случайных чисел — пересборка одного файла
+# не меняет остальные.
+
+def rng_for(name):
+    return np.random.default_rng(zlib.crc32(name.encode()))
+
+
+def grain(r, f, tau, noisiness):
+    """Одно «зёрнышко»: затухающий резонанс + короткий шумовой щелчок."""
+    n = int(max(tau * 7, 0.004) * SR)
+    t = np.arange(n) / SR
+    tone = np.sin(2 * np.pi * f * t + r.uniform(0, 2 * np.pi)) * np.exp(-t / tau)
+    click = highpass(r.standard_normal(n), min(f * 0.7, 9000)) * np.exp(-t / (tau * 0.5)) * 0.5
+    return (1 - noisiness) * tone + noisiness * click
+
+
+def grain_cloud(r, dur, count, f_lo, f_hi, tau_lo, tau_hi, start, spread, noisiness):
+    """Облако зёрен: большинство тихие, несколько — громкие, как в настоящей липкой массе."""
+    buf = np.zeros(int(dur * SR))
+    for _ in range(count):
+        at = start + r.gamma(1.6, spread)
+        if at > dur - 0.03:
+            continue
+        f = np.exp(r.uniform(np.log(f_lo), np.log(f_hi)))
+        place(buf, grain(r, f, r.uniform(tau_lo, tau_hi), noisiness), at, r.uniform(0.15, 1.0) ** 2)
+    return norm(buf)
+
+
+def wet_noise(r, dur, fc_from, fc_to, q, attack, decay, rough):
+    """Влажный шорох: шум через «уезжающий» вниз фильтр + неровная громкость."""
     n = int(dur * SR)
+    t = np.arange(n) / SR
+    fc = fc_to + (fc_from - fc_to) * np.exp(-t / 0.06)
+    x = norm(svf_bandpass(r.standard_normal(n), fc, q))
+    mod = lowpass(r.standard_normal(n), 35)
+    mod = np.clip(1 + rough * mod / np.max(np.abs(mod)), 0, None)
+    return x * env(n, attack, decay) * mod
+
+
+def thud(f, tau, dur=0.2):
+    """Мягкий «вес» нажатия. Гармоники — чтобы было слышно в телефоне."""
     t = times(dur)
-    f = body_to + (body_from - body_to) * np.exp(-t / 0.04)
-    phase = 2 * np.pi * np.cumsum(f) / SR
-    # гармоники нужны, чтобы «буп» был слышен даже в динамике телефона
-    body = (np.sin(phase) + 0.55 * np.sin(2 * phase) + 0.3 * np.sin(3 * phase) + 0.12 * np.sin(4 * phase)) * env(n, 0.004, body_decay)
-
-    fc = squelch_to + (squelch_from - squelch_to) * np.exp(-t / 0.045)
-    sq = norm(svf_bandpass(rng.standard_normal(n), fc, squelch_q)) * env(n, 0.006, squelch_decay)
-
-    bub = np.zeros(n)
-    for _ in range(bubbles):
-        place(bub, bubble(rng.uniform(650, 1500)) * rng.uniform(0.5, 1.0), rng.uniform(0.012, 0.17))
-
-    x = norm(body) + squelch_gain * sq + bubble_gain * norm(bub)
-    x = np.tanh(1.3 * x)
-    x = lowpass(x, 4500, order=4)  # без «шипения» сверху — звук мягче и мокрее
-    return fade_out(x, 0.03)
+    x = np.sin(2 * np.pi * f * t) + 0.6 * np.sin(4 * np.pi * f * t) + 0.3 * np.sin(6 * np.pi * f * t)
+    return x * env(len(t), 0.003, tau)
 
 
-def make_squishes():
-    return {
-        # сбалансированный «чвяк»
-        'squish1': squish(),
-        # мокрый слаймовый — больше пузырьков и шороха
-        'squish2': squish(body_from=600, body_to=210, body_decay=0.06, squelch_from=3200, squelch_to=600,
-                          squelch_decay=0.08, squelch_gain=0.75, bubbles=7, bubble_gain=0.35, dur=0.36),
-        # мягкий пенный — ниже и глуше
-        'squish3': squish(body_from=430, body_to=140, body_decay=0.09, squelch_from=2000, squelch_to=380,
-                          squelch_q=3.0, squelch_decay=0.06, squelch_gain=0.5, bubbles=2, bubble_gain=0.15,
-                          dur=0.34),
-    }
+def pui(dur=0.15):
+    """Милое «пуи!» — голосок игрушки-капибары."""
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    k = t / dur
+    f0 = (640 + 420 * k ** 0.7) * (1 + 0.015 * np.sin(2 * np.pi * 26 * t))
+    phase = 2 * np.pi * np.cumsum(f0) / SR
+    src = sum(np.sin(h * phase) / h for h in range(1, 9))
+    f2 = 900 + 1500 * k ** 1.5  # «у» → «и»
+    v = norm(svf_bandpass(src, 700, 3)) + 0.8 * norm(svf_bandpass(src, f2, 7))
+    e = np.minimum(1, t / 0.012) * np.clip((dur - t) / 0.045, 0, 1)
+    return lowpass(v * e, 6000)
+
+
+def finish(x, lp, rms_db=-16.0):
+    """Общая обработка: срез верхов, одинаковая громкость, мягкий ограничитель."""
+    x = lowpass(x, lp, order=4)
+    active = x[np.abs(x) > 1e-3 * np.max(np.abs(x))]
+    x = x * (10 ** (rms_db / 20) / np.sqrt(np.mean(active ** 2)))
+    x = 0.9 * np.tanh(x / 0.9)
+    return fade_out(x, 0.04)
+
+
+def dumpling_squish(name, variant):
+    """Дамплинг: липкий гелевый «чвяк» с пузырьками."""
+    r = rng_for(name)
+    dur = 0.36
+    buf = np.zeros(int(dur * SR))
+    place(buf, wet_noise(r, 0.3, 1700 + 200 * variant, 450, 1.3, 0.012, 0.075, 0.6), 0, 0.5)
+    place(buf, grain_cloud(r, 0.32, 40 + 8 * variant, 450, 2600, 0.0015, 0.006, 0.004, 0.028, 0.35), 0, 0.85)
+    for _ in range(2 + variant):
+        place(buf, bubble(r.uniform(550, 1200), decay=0.012), r.uniform(0.02, 0.2), r.uniform(0.12, 0.3))
+    place(buf, thud(205 + 15 * variant, 0.03), 0, 0.3)
+    return finish(buf, 5500)
+
+
+def shake_squish(name, variant):
+    """Шейк-слаш: хрусткие гелевые шарики и льдинки в пластиковом стаканчике."""
+    r = rng_for(name)
+    dur = 0.42
+    buf = np.zeros(int(dur * SR))
+    place(buf, grain_cloud(r, 0.4, 120 + 20 * variant, 1200, 4800, 0.0007, 0.0022, 0.01, 0.055, 0.6), 0, 0.8)
+    place(buf, wet_noise(r, 0.36, 3200, 1400, 0.9, 0.02, 0.1, 0.8), 0, 0.4)
+    cup = np.zeros(int(0.1 * SR))
+    tc = np.arange(len(cup)) / SR
+    for f, tau, g in [(940 + 40 * variant, 0.012, 1.0), (2450, 0.006, 0.5), (4100, 0.004, 0.3)]:
+        cup += g * np.sin(2 * np.pi * f * tc) * np.exp(-tc / tau)
+    place(buf, norm(cup), 0, 0.22)
+    for _ in range(1 + variant % 2):
+        place(buf, bubble(r.uniform(900, 1600), decay=0.008), r.uniform(0.05, 0.25), 0.12)
+    return finish(buf, 7000)
+
+
+def capybara_squish(name, variant):
+    """Капибара: глубже и мягче, третий вариант — с «пуи!»."""
+    r = rng_for(name)
+    dur = 0.42
+    buf = np.zeros(int(dur * SR))
+    place(buf, wet_noise(r, 0.38, 1100 + 100 * variant, 320, 1.0, 0.025, 0.11, 0.5), 0, 0.6)
+    place(buf, grain_cloud(r, 0.38, 20 + 4 * variant, 300, 1500, 0.003, 0.009, 0.01, 0.045, 0.25), 0, 0.7)
+    place(buf, thud(160 + 10 * variant, 0.045), 0, 0.45)
+    if variant == 2:
+        place(buf, pui(), 0.07, 0.5)
+    return finish(buf, 4500)
+
+
+SERIES_SQUISH = {'dumpling': dumpling_squish, 'shake': shake_squish, 'capybara': capybara_squish}
 
 
 def make_crit():
-    base = squish(body_from=540, body_to=180, bubbles=5, dur=0.34)
+    """Супер-тап: хрустальные колокольчики. «Чвяк» нужной серии игра играет поверх."""
+    r = rng_for('crit')
     buf = np.zeros(int(0.9 * SR))
-    place(buf, base, 0, 0.9)
     for i, note in enumerate([88, 91, 96]):  # E6 G6 C7
-        place(buf, bell(midi(note), dur=0.55, decay=0.18), 0.04 + i * 0.055, 0.32)
+        place(buf, bell(midi(note), dur=0.55, decay=0.18), i * 0.055, 0.35)
+    for _ in range(5):
+        place(buf, bell(r.uniform(3000, 4500), dur=0.2, decay=0.04, index=0.4), r.uniform(0.1, 0.35), 0.05)
     return fade_out(reverb(buf, 0.18), 0.05)
 
 
@@ -361,20 +446,33 @@ def write_mp3(name, x, bitrate):
     print(f'{out}: {len(x) / SR:.2f} s')
 
 
+def sounds():
+    """Имя файла -> (функция, громкость или None, если громкость задана внутри, битрейт)."""
+    table = {}
+    for series, make in SERIES_SQUISH.items():
+        for v in range(3):
+            table[f'{series}{v + 1}'] = (lambda make=make, n=f'{series}{v + 1}', v=v: make(n, v), None, '96k')
+    table.update({
+        'crit': (make_crit, 0.8, '96k'),
+        'buy': (make_buy, 0.6, '96k'),
+        'unlock': (make_unlock, 0.7, '96k'),
+        'bonus': (make_bonus, 0.65, '96k'),
+        'click': (make_click, 0.45, '96k'),
+        'music': (make_music, None, '128k'),
+    })
+    return table
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
-    # громкость эффектов относительно друг друга
-    sfx = dict(make_squishes())
-    sfx['crit'] = make_crit()
-    sfx['buy'] = make_buy()
-    sfx['unlock'] = make_unlock()
-    sfx['bonus'] = make_bonus()
-    sfx['click'] = make_click()
-    levels = {'squish1': 0.85, 'squish2': 0.85, 'squish3': 0.85, 'crit': 0.85,
-              'buy': 0.6, 'unlock': 0.7, 'bonus': 0.65, 'click': 0.45}
-    for name, x in sfx.items():
-        write_mp3(name, norm(x, levels[name]), '96k')
-    write_mp3('music', make_music(), '128k')
+    table = sounds()
+    names = sys.argv[1:] or list(table)
+    for name in names:
+        if name not in table:
+            sys.exit(f'Нет такого звука: {name}. Есть: {", ".join(table)}')
+        make, level, bitrate = table[name]
+        x = make()
+        write_mp3(name, norm(x, level) if level else x, bitrate)
 
 
 if __name__ == '__main__':

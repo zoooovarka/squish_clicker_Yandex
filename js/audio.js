@@ -8,7 +8,6 @@
 
   // Несколько файлов в списке — на каждое нажатие выбирается случайный.
   const SOUND_FILES = {
-    squish: ['sounds/squish1.mp3', 'sounds/squish2.mp3', 'sounds/squish3.mp3'],
     crit:   ['sounds/crit.mp3'],
     buy:    ['sounds/buy.mp3'],
     unlock: ['sounds/unlock.mp3'],
@@ -16,8 +15,15 @@
     click:  ['sounds/click.mp3'],
   };
 
-  // Необязательно: свой звук для конкретного сквиша (id из js/squishes.js).
-  // Пример: dumpling: ['sounds/dumpling.mp3'],
+  // «Чвяк» при нажатии — свой для каждой серии (id серии из js/squishes.js).
+  const SERIES_FILES = {
+    dumpling: ['sounds/dumpling1.mp3', 'sounds/dumpling2.mp3', 'sounds/dumpling3.mp3'],
+    shake:    ['sounds/shake1.mp3', 'sounds/shake2.mp3', 'sounds/shake3.mp3'],
+    capybara: ['sounds/capybara1.mp3', 'sounds/capybara2.mp3', 'sounds/capybara3.mp3'],
+  };
+
+  // Необязательно: свой звук для конкретного сквиша (id из js/squishes.js),
+  // важнее звука серии. Пример: capybara_gold: ['sounds/capybara_gold.mp3'],
   const SQUISH_FILES = {
   };
 
@@ -49,6 +55,7 @@
   function allUrls() {
     const urls = [MUSIC_FILE];
     for (const k in SOUND_FILES) urls.push(...SOUND_FILES[k]);
+    for (const k in SERIES_FILES) urls.push(...SERIES_FILES[k]);
     for (const k in SQUISH_FILES) urls.push(...SQUISH_FILES[k]);
     return urls;
   }
@@ -140,9 +147,10 @@
     src.start(0, start);
   }
 
-  function pickBuffer(name, squishId) {
+  function pickBuffer(name, squishId, series) {
     const lists = [];
     if (name === 'squish' && SQUISH_FILES[squishId]) lists.push(SQUISH_FILES[squishId]);
+    if (name === 'squish' && SERIES_FILES[series]) lists.push(SERIES_FILES[series]);
     if (SOUND_FILES[name]) lists.push(SOUND_FILES[name]);
     for (const list of lists) {
       const ready = list.map((u) => decoded[u]).filter(Boolean);
@@ -190,11 +198,9 @@
         tone(330 * pitch, t, 0.16, 'sine', 0.45, 110 * pitch);
         squelch(t, pitch, 0.18);
         break;
-      case 'crit':
-        tone(300 * pitch, t, 0.16, 'sine', 0.45, 100 * pitch);
-        squelch(t, pitch, 0.2);
-        tone(880, t + 0.04, 0.12, 'triangle', 0.18, 1320);
-        tone(1320, t + 0.1, 0.14, 'triangle', 0.14, 1760);
+      case 'crit': // «чвяк» играет отдельно, здесь только звон
+        tone(880, t + 0.02, 0.12, 'triangle', 0.18, 1320);
+        tone(1320, t + 0.08, 0.14, 'triangle', 0.14, 1760);
         break;
       case 'buy':
         tone(660, t, 0.09, 'triangle', 0.25);
@@ -216,11 +222,11 @@
     if (!ctx || userMuted || blockers.size > 0) return;
     opts = opts || {};
     const pitch = (opts.pitch || 1) * (0.92 + Math.random() * 0.16);
-    const buf = pickBuffer(name, opts.squishId);
+    const buf = pickBuffer(name, opts.squishId, opts.series);
     if (buf) {
       const src = ctx.createBufferSource();
       src.buffer = buf;
-      if (name === 'squish' || name === 'crit') src.playbackRate.value = pitch;
+      if (name === 'squish') src.playbackRate.value = pitch;
       src.connect(sfxGain);
       src.start();
     } else {
