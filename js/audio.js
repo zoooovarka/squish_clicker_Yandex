@@ -1,6 +1,7 @@
 /* Звуки.
-   Положи свои файлы в папку sounds/ с именами из SOUND_FILES ниже
-   (или поменяй пути). Если файла нет — играет встроенный синтезированный звук,
+   Файлы в sounds/ сгенерированы скриптом tools/make_sounds.py.
+   Чтобы поставить свои — замени файлы с теми же именами (или поменяй пути ниже).
+   Если файла нет — играет встроенный синтезированный звук,
    так что игра никогда не останется «немой». */
 (function () {
   'use strict';
@@ -22,6 +23,9 @@
 
   // Фоновая музыка (необязательно). Играет по кругу.
   const MUSIC_FILE = 'sounds/music.mp3';
+  // Точная длина петли в секундах — MP3 добавляет тишину в начало и конец,
+  // без этого на стыке слышна пауза. Для своей музыки поставь null.
+  const MUSIC_LOOP_SECONDS = 40;
 
   const SFX_VOLUME = 0.9;
   const MUSIC_VOLUME = 0.3;
@@ -56,11 +60,26 @@
       prefetch(url).then((ab) => {
         if (!ab || !ctx) return;
         ctx.decodeAudioData(ab).then((buf) => {
-          decoded[url] = buf;
+          decoded[url] = url === MUSIC_FILE ? buf : trimSilence(buf);
           if (url === MUSIC_FILE) startMusic();
         }).catch(() => {});
       });
     }
+  }
+
+  // MP3 начинается с короткой тишины — срезаем её, чтобы звук отвечал на тап сразу.
+  function firstSound(buf) {
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) if (Math.abs(d[i]) > 0.0005) return i;
+    return 0;
+  }
+
+  function trimSilence(buf) {
+    const start = firstSound(buf);
+    if (start < 32) return buf;
+    const out = ctx.createBuffer(buf.numberOfChannels, buf.length - start, buf.sampleRate);
+    for (let c = 0; c < buf.numberOfChannels; c++) out.getChannelData(c).set(buf.getChannelData(c).subarray(start));
+    return out;
   }
 
   function applyVolume() {
@@ -80,7 +99,15 @@
       if (!AC) return;
       ctx = new AC();
       master = ctx.createGain();
-      master.connect(ctx.destination);
+      // мягкий ограничитель: много быстрых тапов подряд не будут хрипеть
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -6;
+      limiter.knee.value = 6;
+      limiter.ratio.value = 8;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.15;
+      master.connect(limiter);
+      limiter.connect(ctx.destination);
       sfxGain = ctx.createGain();
       sfxGain.gain.value = SFX_VOLUME;
       sfxGain.connect(master);
@@ -104,8 +131,13 @@
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.loop = true;
+    const start = firstSound(buf) / buf.sampleRate;
+    if (MUSIC_LOOP_SECONDS && start + MUSIC_LOOP_SECONDS <= buf.duration) {
+      src.loopStart = start;
+      src.loopEnd = start + MUSIC_LOOP_SECONDS;
+    }
     src.connect(musicGain);
-    src.start();
+    src.start(0, start);
   }
 
   function pickBuffer(name, squishId) {
